@@ -1,0 +1,46 @@
+{
+  "name": "فان‌پارک — خرید بلیط و ورود با QR",
+  "short_name": "فان‌پارک",
+  "description": "خرید آنلاین بلیط پارک تفریحی، پارک آبی و شهر کودکان با ورود سریع از طریق QR",
+  "lang": "fa",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#7c3aed",
+  "categories": ["entertainment", "travel", "shopping"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "بلیط‌های من",
+      "short_name": "بلیط‌ها",
+      "url": "/dashboard"
+    },
+    {
+      "name": "ورود به حساب",
+      "short_name": "ورود",
+      "url": "/login"
+    }
+  ]
+}
