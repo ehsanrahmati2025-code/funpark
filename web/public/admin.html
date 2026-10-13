@@ -25,53 +25,90 @@
   input, select { font-family: Vazirmatn; }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-  .loading { opacity: .6; pointer-events: none; }
   .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
   .badge-green { background: #dcfce7; color: #166534; }
   .badge-red { background: #fee2e2; color: #991b1b; }
   .badge-yellow { background: #fef3c7; color: #92400e; }
   .badge-blue { background: #dbeafe; color: #1e40af; }
   .badge-gray { background: #f1f5f9; color: #475569; }
+
+  /* Sidebar Overlay */
+  #sidebarOverlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15,23,42,.5);
+    backdrop-filter: blur(2px);
+    z-index: 25;
+  }
+  #sidebarOverlay.show { display: block; }
+
+  /* Mobile menu button - hidden by default */
+  #menuToggle { display: none; }
+
+  /* ===== Responsive ===== */
+  @media (max-width: 1024px) {
+    #sidebar {
+      transform: translateX(100%);
+      transition: transform .3s ease;
+      box-shadow: -4px 0 24px rgba(0,0,0,.15);
+    }
+    #sidebar.open { transform: translateX(0); }
+    #mainContent { margin-right: 0 !important; }
+    #menuToggle { display: flex !important; }
+    #pageContent { padding: 16px !important; }
+    header { padding-left: 16px !important; padding-right: 16px !important; }
+    .close-sidebar-btn { display: block !important; }
+  }
+
+  @media (max-width: 640px) {
+    .grid-mobile-1 { grid-template-columns: 1fr !important; }
+    .grid-mobile-2 { grid-template-columns: 1fr 1fr !important; }
+    table { font-size: 12px; }
+    table th, table td { padding: 8px 6px !important; }
+    .text-2xl { font-size: 18px !important; }
+    .text-3xl { font-size: 22px !important; }
+    .stat-card { padding: 12px !important; }
+    .stat-card p:last-child { font-size: 18px !important; }
+    .hide-mobile { display: none !important; }
+  }
 </style>
 </head>
 <body>
 
 <!-- ================= LOGIN ================= -->
 <div id="loginScreen" class="min-h-screen flex items-center justify-center gradient-bg p-4">
-  <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8">
+  <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 sm:p-8">
     <div class="text-center mb-8">
       <div class="text-6xl mb-4">🎡</div>
       <h1 class="text-3xl font-black text-slate-800">فان‌پارک</h1>
       <p class="text-slate-500 mt-1">ورود به پنل مدیریت</p>
     </div>
-
     <div class="space-y-4">
       <div>
         <label class="block text-sm font-bold text-slate-700 mb-2">نام کاربری</label>
-        <input id="loginUsername" type="text" dir="ltr" autocomplete="username"
-          placeholder="admin"
+        <input id="loginUsername" type="text" dir="ltr" autocomplete="username" placeholder="admin"
           class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-purple-500 focus:outline-none text-left">
       </div>
       <div>
         <label class="block text-sm font-bold text-slate-700 mb-2">رمز عبور</label>
-        <input id="loginPassword" type="password" autocomplete="current-password"
-          placeholder="••••••••"
+        <input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••"
           class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-purple-500 focus:outline-none">
       </div>
       <button onclick="doLogin()" id="loginBtn"
-        class="w-full gradient-bg text-white py-3 rounded-xl font-bold text-lg hover:opacity-90 transition">
-        ورود به پنل
-      </button>
+        class="w-full gradient-bg text-white py-3 rounded-xl font-bold text-lg hover:opacity-90 transition">ورود به پنل</button>
       <p id="loginError" class="text-red-600 text-sm text-center hidden"></p>
     </div>
   </div>
 </div>
 
 <!-- ================= DASHBOARD ================= -->
-<div id="dashboard" class="hidden min-h-screen flex">
+<div id="dashboard" class="hidden min-h-screen">
 
-  <aside class="w-64 bg-white border-l border-slate-200 flex flex-col fixed h-full z-30">
-    <div class="p-5 border-b border-slate-100">
+  <div id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+  <aside id="sidebar" class="w-64 bg-white border-l border-slate-200 flex flex-col fixed h-full z-30 right-0">
+    <div class="p-5 border-b border-slate-100 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <span class="text-3xl">🎡</span>
         <div>
@@ -79,6 +116,7 @@
           <p class="text-xs text-slate-400">پنل مدیریت</p>
         </div>
       </div>
+      <button onclick="toggleSidebar()" class="lg:hidden text-slate-400 hover:text-slate-700 text-2xl leading-none">✕</button>
     </div>
     <nav class="flex-1 p-3 space-y-1 overflow-y-auto">
       <a href="#" data-page="dashboard" class="sidebar-item active flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600">
@@ -110,15 +148,18 @@
     </div>
   </aside>
 
-  <main class="flex-1 mr-64">
+  <main id="mainContent" class="mr-64">
     <header class="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between sticky top-0 z-20">
-      <h2 id="pageTitle" class="text-2xl font-black text-slate-800">داشبورد</h2>
+      <div class="flex items-center gap-3">
+        <button id="menuToggle" onclick="toggleSidebar()" 
+          class="items-center justify-center w-10 h-10 rounded-xl bg-purple-50 text-purple-600 text-xl font-bold">☰</button>
+        <h2 id="pageTitle" class="text-2xl font-black text-slate-800">داشبورد</h2>
+      </div>
       <div class="flex items-center gap-3">
         <button onclick="refreshCurrentPage()" class="text-slate-500 hover:text-purple-600 transition text-2xl" title="بروزرسانی">🔄</button>
         <div class="w-10 h-10 rounded-full gradient-bg flex items-center justify-center text-white font-bold">م</div>
       </div>
     </header>
-
     <div id="pageContent" class="p-8"></div>
   </main>
 </div>
@@ -149,6 +190,14 @@ async function api(action, body = {}) {
   return json.data;
 }
 
+// ============= SIDEBAR =============
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebarOverlay');
+  sidebar.classList.toggle('open');
+  overlay.classList.toggle('show');
+}
+
 // ============= TOAST =============
 function toast(msg, type = 'success') {
   const colors = { success: 'bg-green-500', error: 'bg-red-500', info: 'bg-blue-500', warning: 'bg-yellow-500' };
@@ -174,17 +223,14 @@ async function doLogin() {
   const password = document.getElementById('loginPassword').value;
   const errEl = document.getElementById('loginError');
   const btn = document.getElementById('loginBtn');
-
   errEl.classList.add('hidden');
   if (!username || !password) {
     errEl.textContent = 'نام کاربری و رمز عبور را وارد کنید';
     errEl.classList.remove('hidden');
     return;
   }
-
   btn.disabled = true;
   btn.textContent = 'در حال ورود...';
-
   try {
     const res = await api('admin.login', { username, password });
     state.token = res.token;
@@ -224,6 +270,7 @@ document.querySelectorAll('.sidebar-item').forEach(el => {
   el.addEventListener('click', e => {
     e.preventDefault();
     navigate(el.dataset.page);
+    if (window.innerWidth < 1024) toggleSidebar();
   });
 });
 
@@ -266,37 +313,36 @@ async function renderDashboard() {
   ]);
 
   const cards = [
-    { label: 'درآمد کل', value: fmtRial(stats.revenue_rial), icon: '💰', color: 'from-green-500 to-emerald-600' },
-    { label: 'سفارش موفق', value: fmtNum(stats.orders_paid), icon: '🛒', color: 'from-blue-500 to-indigo-600' },
-    { label: 'بلیط صادرشده', value: fmtNum(stats.tickets_total), icon: '🎫', color: 'from-purple-500 to-pink-600' },
-    { label: 'کاربران', value: fmtNum(stats.users), icon: '👥', color: 'from-orange-500 to-red-500' },
-    { label: 'رویداد فعال', value: `${stats.events_active} / ${stats.events_total}`, icon: '🎢', color: 'from-cyan-500 to-blue-600' },
-    { label: 'دستگاه فعال', value: fmtNum(stats.devices_active), icon: '📡', color: 'from-indigo-500 to-purple-600' },
-    { label: 'کل اسکن‌ها', value: fmtNum(stats.scans_total), icon: '📋', color: 'from-slate-500 to-slate-700' },
-    { label: 'بلیط استفاده‌شده', value: fmtNum(stats.tickets_used), icon: '✅', color: 'from-teal-500 to-cyan-600' },
+    { label: 'درآمد کل', value: fmtRial(stats.revenue_rial), icon: '💰' },
+    { label: 'سفارش موفق', value: fmtNum(stats.orders_paid), icon: '🛒' },
+    { label: 'بلیط صادرشده', value: fmtNum(stats.tickets_total), icon: '🎫' },
+    { label: 'کاربران', value: fmtNum(stats.users), icon: '👥' },
+    { label: 'رویداد فعال', value: `${stats.events_active} / ${stats.events_total}`, icon: '🎢' },
+    { label: 'دستگاه فعال', value: fmtNum(stats.devices_active), icon: '📡' },
+    { label: 'کل اسکن‌ها', value: fmtNum(stats.scans_total), icon: '📋' },
+    { label: 'بلیط استفاده‌شده', value: fmtNum(stats.tickets_used), icon: '✅' },
   ];
 
   document.getElementById('pageContent').innerHTML = `
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-5 mb-8">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-5 mb-6 sm:mb-8">
       ${cards.map(c => `
-        <div class="stat-card bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+        <div class="stat-card bg-white p-4 sm:p-5 rounded-2xl border border-slate-100 shadow-sm">
           <div class="flex items-center justify-between">
-            <span class="text-3xl">${c.icon}</span>
-            <div class="w-2 h-2 rounded-full bg-gradient-to-r ${c.color}"></div>
+            <span class="text-2xl sm:text-3xl">${c.icon}</span>
           </div>
-          <p class="text-xs text-slate-500 mt-3">${c.label}</p>
-          <p class="text-2xl font-black text-slate-800 mt-1">${c.value}</p>
+          <p class="text-xs text-slate-500 mt-2 sm:mt-3">${c.label}</p>
+          <p class="text-lg sm:text-2xl font-black text-slate-800 mt-1">${c.value}</p>
         </div>
       `).join('')}
     </div>
-    <div class="grid md:grid-cols-2 gap-6">
-      <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+    <div class="grid md:grid-cols-2 gap-4 sm:gap-6">
+      <div class="bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-sm">
         <h3 class="font-black text-slate-800 mb-4">📈 فروش ۱۴ روز اخیر</h3>
-        <div style="height:280px"><canvas id="chartSales"></canvas></div>
+        <div style="height:250px"><canvas id="chartSales"></canvas></div>
       </div>
-      <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+      <div class="bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-sm">
         <h3 class="font-black text-slate-800 mb-4">📊 تعداد سفارش‌ها</h3>
-        <div style="height:280px"><canvas id="chartOrders"></canvas></div>
+        <div style="height:250px"><canvas id="chartOrders"></canvas></div>
       </div>
     </div>
   `;
@@ -331,10 +377,10 @@ async function renderEvents() {
   document.getElementById('pageContent').innerHTML = `
     <div class="flex justify-between items-center mb-6">
       <div class="text-slate-500 text-sm">${events.length} رویداد</div>
-      <button onclick="openEventModal()" class="gradient-bg text-white px-5 py-2.5 rounded-xl font-bold hover:opacity-90 transition">➕ رویداد جدید</button>
+      <button onclick="openEventModal()" class="gradient-bg text-white px-4 sm:px-5 py-2.5 rounded-xl font-bold hover:opacity-90 transition text-sm">➕ رویداد جدید</button>
     </div>
-    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-      <table class="w-full text-sm">
+    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
+      <table class="w-full text-sm min-w-[600px]">
         <thead class="bg-slate-50 text-slate-600">
           <tr>
             <th class="px-4 py-3 text-right font-bold">عنوان</th>
@@ -443,8 +489,6 @@ async function saveEvent(id) {
 // ============= ORDERS =============
 async function renderOrders() {
   const { orders } = await api('admin.orders.list');
-  state.cache.orders = orders;
-
   const statusBadge = (s) => ({
     paid: '<span class="badge badge-green">پرداخت‌شده</span>',
     pending: '<span class="badge badge-yellow">در انتظار</span>',
@@ -452,13 +496,13 @@ async function renderOrders() {
   }[s] || `<span class="badge badge-gray">${s}</span>`);
 
   document.getElementById('pageContent').innerHTML = `
-    <div class="mb-6 flex items-center justify-between">
+    <div class="mb-6 flex items-center justify-between flex-wrap gap-3">
       <div class="text-slate-500 text-sm">${orders.length} سفارش</div>
       <input id="orderSearch" placeholder="🔍 جستجو..." oninput="filterTable('ordersTable')"
-        class="px-4 py-2 border-2 border-slate-200 rounded-xl w-64">
+        class="px-4 py-2 border-2 border-slate-200 rounded-xl w-full sm:w-64">
     </div>
-    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-      <table id="ordersTable" class="w-full text-sm">
+    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
+      <table id="ordersTable" class="w-full text-sm min-w-[700px]">
         <thead class="bg-slate-50 text-slate-600">
           <tr>
             <th class="px-4 py-3 text-right font-bold">کاربر</th>
@@ -493,8 +537,6 @@ async function renderOrders() {
 // ============= TICKETS =============
 async function renderTickets() {
   const { tickets } = await api('admin.tickets.list');
-  state.cache.tickets = tickets;
-
   const statusBadge = (s) => ({
     issued: '<span class="badge badge-blue">صادرشده</span>',
     partially_used: '<span class="badge badge-yellow">استفاده جزئی</span>',
@@ -503,13 +545,13 @@ async function renderTickets() {
   }[s] || `<span class="badge badge-gray">${s}</span>`);
 
   document.getElementById('pageContent').innerHTML = `
-    <div class="mb-6 flex items-center justify-between">
+    <div class="mb-6 flex items-center justify-between flex-wrap gap-3">
       <div class="text-slate-500 text-sm">${tickets.length} بلیط</div>
       <input id="ticketSearch" placeholder="🔍 جستجو..." oninput="filterTable('ticketsTable')"
-        class="px-4 py-2 border-2 border-slate-200 rounded-xl w-64">
+        class="px-4 py-2 border-2 border-slate-200 rounded-xl w-full sm:w-64">
     </div>
-    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-      <table id="ticketsTable" class="w-full text-sm">
+    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
+      <table id="ticketsTable" class="w-full text-sm min-w-[700px]">
         <thead class="bg-slate-50 text-slate-600">
           <tr>
             <th class="px-4 py-3 text-right font-bold">سریال</th>
@@ -558,8 +600,8 @@ async function renderUsers() {
   const { users } = await api('admin.users.list');
   document.getElementById('pageContent').innerHTML = `
     <div class="mb-6 text-slate-500 text-sm">${users.length} کاربر</div>
-    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-      <table class="w-full text-sm">
+    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
+      <table class="w-full text-sm min-w-[600px]">
         <thead class="bg-slate-50 text-slate-600">
           <tr>
             <th class="px-4 py-3 text-right font-bold">نام</th>
@@ -588,13 +630,12 @@ async function renderUsers() {
 async function renderDevices() {
   const { devices } = await api('admin.devices.list');
   state.cache.devices = devices;
-
   document.getElementById('pageContent').innerHTML = `
-    <div class="flex justify-between items-center mb-6">
+    <div class="flex justify-between items-center mb-6 flex-wrap gap-3">
       <div class="text-slate-500 text-sm">${devices.length} دستگاه</div>
-      <button onclick="openDeviceModal()" class="gradient-bg text-white px-5 py-2.5 rounded-xl font-bold hover:opacity-90 transition">➕ دستگاه جدید</button>
+      <button onclick="openDeviceModal()" class="gradient-bg text-white px-4 sm:px-5 py-2.5 rounded-xl font-bold hover:opacity-90 transition text-sm">➕ دستگاه جدید</button>
     </div>
-    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
       ${devices.map(d => `
         <div class="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
           <div class="flex items-center justify-between mb-3">
@@ -706,15 +747,15 @@ function showKeyModal(key) {
 async function renderScans() {
   const { logs } = await api('admin.scanlogs.list');
   document.getElementById('pageContent').innerHTML = `
-    <div class="mb-6 flex items-center justify-between">
+    <div class="mb-6 flex items-center justify-between flex-wrap gap-3">
       <div class="text-slate-500 text-sm">${logs.length} لاگ (آخرین ۲۰۰)</div>
       <label class="flex items-center gap-2 cursor-pointer text-sm font-bold text-slate-600">
         <input type="checkbox" id="autoRefresh" class="rounded">
-        بروزرسانی خودکار (۱۰ ثانیه)
+        بروزرسانی خودکار
       </label>
     </div>
-    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-      <table class="w-full text-sm">
+    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
+      <table class="w-full text-sm min-w-[600px]">
         <thead class="bg-slate-50 text-slate-600">
           <tr>
             <th class="px-4 py-3 text-right font-bold">سریال بلیط</th>
@@ -741,13 +782,11 @@ async function renderScans() {
       ${logs.length === 0 ? '<div class="text-center py-12 text-slate-400">لاگی وجود ندارد</div>' : ''}
     </div>
   `;
-
   const cb = document.getElementById('autoRefresh');
   let interval;
   cb.addEventListener('change', () => {
-    if (cb.checked) {
-      interval = setInterval(() => { if (state.currentPage === 'scans') renderScans(); }, 10000);
-    } else clearInterval(interval);
+    if (cb.checked) interval = setInterval(() => { if (state.currentPage === 'scans') renderScans(); }, 10000);
+    else clearInterval(interval);
   });
 }
 
