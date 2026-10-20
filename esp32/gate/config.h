@@ -122,11 +122,6 @@
 /* ------------------------------------------------------------------ */
 #define DEBUG_SERIAL  1
 
-/* تست‌های عمیق TCP/TLS قبل از هر ارسال به سرور.
-   هر تست یک اتصال اضافی می‌سازد و اسکن را کند می‌کند؛ فقط هنگام
-   عیب‌یابی شبکه آن را ۱ کنید.                                        */
-#define HTTP_DEBUG_PROBES  0
-
 #if DEBUG_SERIAL
   #define LOG(x)        Serial.print(x)
   #define LOGLN(x)      Serial.println(x)
