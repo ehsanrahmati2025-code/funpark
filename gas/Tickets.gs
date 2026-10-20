@@ -22,24 +22,34 @@ function creditsForEvent_(event) {
 /*  امضای QR (HMAC-SHA256)                                             */
 /* ------------------------------------------------------------------ */
 
-/** ساخت JSON کانونیکال payload — ترتیب کلیدها ثابت است تا امضا پایدار بماند */
+/**
+ * ساخت بدنه کانونیکال QR — قالب فشرده:  v|tid|nonce|exp
+ *
+ * چرا JSON نه؟
+ *   هر کاراکتر اضافه، نسخه QR را بالا می‌برد و ماژول‌ها را ریزتر می‌کند.
+ *   نسخه قبلی (JSON کامل) حدود ۲۹۸ کاراکتر بود ⟹ QR نسخه ۱۱ (۶۹×۶۹ ماژول)
+ *   این قالب حدود ۱۱۰ کاراکتر است ⟹ QR نسخه ۵ (۳۷×۳۷ ماژول)
+ *   یعنی هر ماژول روی صفحه تقریباً دو برابر بزرگ‌تر و برای دوربین خواناتر.
+ *
+ * فیلدهای eid و sn و iat عمداً حذف شده‌اند: سرور همه‌شان را از روی ردیف
+ * بلیط (با tid) پیدا می‌کند، پس وجودشان در QR فقط حجم اضافه بود.
+ */
 function qrCanonical_(p) {
-  return JSON.stringify({
-    v: 1,
-    tid: String(p.tid),
-    eid: String(p.eid),
-    sn: String(p.sn),
-    nonce: String(p.nonce),
-    iat: toInt_(p.iat, 0),
-    exp: toInt_(p.exp, 0)
-  });
+  return String(1) + '|' + String(p.tid) + '|' + String(p.nonce) + '|' + String(toInt_(p.exp, 0));
 }
 
-/** ساخت رشته QR: base64url(payload_json) + "." + base64url(hmac_sha256(payload_json, QR_SECRET)) */
+/** طول امضای کوتاه‌شده: ۲۲ کاراکتر base64url = ۱۶ بایت = ۱۲۸ بیت */
+var QR_SIG_LEN = 22;
+
+/**
+ * ساخت رشته QR:
+ *   base64url(v|tid|nonce|exp) + "." + base64url(hmac_sha256(بدنه))[0..21]
+ */
 function buildQrString_(payload) {
-  var json = qrCanonical_(payload);
+  var body = qrCanonical_(payload);
   var secret = getProp_('QR_SECRET');
-  return strToB64Url_(json) + '.' + hmacSha256B64Url_(json, secret);
+  var sig = hmacSha256B64Url_(body, secret).substring(0, QR_SIG_LEN);
+  return strToB64Url_(body) + '.' + sig;
 }
 
 /** تجزیه و اعتبارسنجی رشته QR — خروجی: { valid, reason, payload } */
@@ -48,16 +58,25 @@ function parseQrString_(qr) {
     var parts = String(qr || '').trim().split('.');
     if (parts.length !== 2) return { valid: false, reason: 'malformed_qr' };
 
-    var json = b64UrlToStr_(parts[0]);
+    var body = b64UrlToStr_(parts[0]);
     var secret = getProp_('QR_SECRET');
-    var expected = hmacSha256B64Url_(json, secret);
+    var expected = hmacSha256B64Url_(body, secret).substring(0, QR_SIG_LEN);
     if (!safeEqual_(expected, parts[1])) return { valid: false, reason: 'bad_signature' };
 
-    var payload = JSON.parse(json);
-    if (toInt_(payload.v, 0) !== 1) return { valid: false, reason: 'unsupported_version' };
-    if (!payload.tid || !payload.eid || !payload.nonce) return { valid: false, reason: 'incomplete_payload' };
+    var f = body.split('|');
+    if (f.length !== 4) return { valid: false, reason: 'incomplete_payload' };
 
-    if (toInt_(payload.exp, 0) < unixNow_()) return { valid: false, reason: 'expired', payload: payload };
+    var payload = {
+      v: toInt_(f[0], 0),
+      tid: String(f[1]),
+      nonce: String(f[2]),
+      exp: toInt_(f[3], 0)
+    };
+
+    if (payload.v !== 1) return { valid: false, reason: 'unsupported_version' };
+    if (!payload.tid || !payload.nonce) return { valid: false, reason: 'incomplete_payload' };
+
+    if (payload.exp < unixNow_()) return { valid: false, reason: 'expired', payload: payload };
 
     return { valid: true, reason: 'ok', payload: payload };
   } catch (err) {
@@ -75,7 +94,8 @@ function issueTicketFor_(order, event, index) {
   var exp = new Date(now.getTime() + TICKET_TTL_DAYS * 24 * 60 * 60 * 1000);
   var credits = creditsForEvent_(event);
   var tid = uuid_();
-  var nonce = randomHex_(32);
+  /* نانس کوتاه (۱۶ کاراکتر) تا طول QR کم بماند و ماژول‌ها درشت شوند */
+  var nonce = randomHex_(16);
   var sn = serialNumber_();
 
   var payload = {
