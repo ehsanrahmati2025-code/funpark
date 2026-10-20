@@ -41,6 +41,47 @@ function seedEventsData_() {
   ];
 }
 
+/**
+ * adminFixDeviceKey — تعمیر فوری کلید دستگاه
+ *
+ * این تابع را می‌توانید مستقیم در ویرایشگر Apps Script اجرا کنید
+ * (نیازی به Deploy ندارد، چون فقط شیت را تغییر می‌دهد):
+ *   در لیست توابع بالای ویرایشگر، adminFixDeviceKey را انتخاب و Run بزنید.
+ *
+ * مشکل «کلید دستگاه نامعتبر است» یعنی هش ذخیره‌شده در شیت Devices با
+ * sha256 کلید فریمور نمی‌خواند. این تابع آن را هم‌تراز می‌کند.
+ */
+function adminFixDeviceKey() {
+  ensureAllSheets_();
+
+  var deviceId = 'gate-01';
+  var deviceKey = 'test-key-123';
+  var wantHash = sha256Hex_(deviceKey);
+
+  var existing = findRow_('Devices', function (d) { return String(d.id) === deviceId; });
+
+  if (existing) {
+    updateRow_('Devices', existing._row, { api_key_hash: wantHash, active: true });
+    Logger.log('UPDATED gate-01');
+  } else {
+    appendRow_('Devices', {
+      id: deviceId,
+      name: 'گیت ورودی اصلی',
+      location: 'ورودی شماره ۱',
+      api_key_hash: wantHash,
+      active: true,
+      last_seen_at: ''
+    });
+    Logger.log('CREATED gate-01');
+  }
+
+  Logger.log('device_id = ' + deviceId);
+  Logger.log('device_key = ' + deviceKey);
+  Logger.log('api_key_hash = ' + wantHash);
+
+  return { id: deviceId, key: deviceKey, hash: wantHash };
+}
+
 /** action: admin.seed — پر کردن دیتای دمو (idempotent) */
 function handleAdminSeed(ctx) {
   try {
@@ -72,13 +113,29 @@ function handleAdminSeed(ctx) {
 
     // --- دستگاه اسکنر ---
     var createdDevices = 0;
+    var updatedDevices = 0;
     var skippedDevices = 0;
     var deviceId = 'gate-01';
     var deviceKey = 'test-key-123';
 
     var existingDevice = findRow_('Devices', function (d) { return String(d.id) === deviceId; });
+
     if (existingDevice) {
-      skippedDevices++;
+      /* خودترمیم: اگر هش ذخیره‌شده با کلید فعلی نمی‌خواند (مثلاً کلید
+         دستگاه عوض شده یا ردیف دستی ویرایش شده)، درستش می‌کنیم.
+         بدون این، اسکن همیشه «کلید دستگاه نامعتبر است» می‌داد. */
+      var wantHash = sha256Hex_(deviceKey);
+      var haveHash = String(existingDevice.api_key_hash || '');
+
+      if (!safeEqual_(haveHash, wantHash) || !toBool_(existingDevice.active)) {
+        updateRow_('Devices', existingDevice._row, {
+          api_key_hash: wantHash,
+          active: true
+        });
+        updatedDevices++;
+      } else {
+        skippedDevices++;
+      }
     } else {
       appendRow_('Devices', {
         id: deviceId,
@@ -96,6 +153,7 @@ function handleAdminSeed(ctx) {
       events_created: createdEvents,
       events_skipped: skippedEvents,
       devices_created: createdDevices,
+      devices_updated: updatedDevices,
       devices_skipped: skippedDevices,
       device: { id: deviceId, key: deviceKey },
       events: queryRows_('Events').map(function (r) {

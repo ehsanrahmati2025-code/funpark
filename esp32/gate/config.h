@@ -21,7 +21,7 @@
 /*     GAS_URL باید آدرس Web App منتشرشده و به /exec ختم شود.          */
 /*     DEVICE_KEY همان کلیدی است که در شیت Devices با sha256 ذخیره شد. */
 /* ------------------------------------------------------------------ */
-#define GAS_URL     "https://script.google.com/macros/s/AKfycby418Cfu-DNw8pQwTzuBewtSIC6LR5QC3SRHkCRtkDyfjETiazlcbtH-Cl7Eh14ifiM/exec"
+#define GAS_URL     "https://script.google.com/macros/s/AKfycbyWX7epRu_AsOmz0bxGEC_OPZcMmdCLVXqPoIw9FGkgtQ1OM00wvn_Vcgcs7xQnuFzi/exec"
 #define DEVICE_ID   "gate-01"
 #define DEVICE_KEY  "test-key-123"
 

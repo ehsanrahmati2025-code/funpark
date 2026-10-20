@@ -1147,6 +1147,19 @@ static String httpPostFollowRedirects(const String &url, const String &body, int
 
     LOGF("[HTTP] attempt %d failed (code=%d)\n", attempt, outCode);
 
+    /* تشخیص سریع: اگر TCP هم شکست بخورد یعنی سوکت/شبکه؛ اگر TCP سالم
+       بود ولی POST مرده، مشکل TLS است. */
+    {
+      WiFiClient diag;
+      bool tcpOk = diag.connect("script.google.com", 443, 3000);
+      LOGF("[HTTP] diag: tcp=%s wifi=%d rssi=%d heap=%u maxAlloc=%u\n",
+           tcpOk ? "OK" : "FAIL",
+           (int)WiFi.status(), WiFi.RSSI(),
+           (unsigned)ESP.getFreeHeap(),
+           (unsigned)ESP.getMaxAllocHeap());
+      if (tcpOk) diag.stop();
+    }
+
     if (WiFi.status() != WL_CONNECTED) {
       LOGLN("[HTTP] wifi lost — reconnecting");
       WiFi.reconnect();
