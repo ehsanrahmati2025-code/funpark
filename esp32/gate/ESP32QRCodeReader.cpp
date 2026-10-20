@@ -134,11 +134,10 @@ void qrCodeDetectTask(void *taskData)
       Serial.printf("uxHighWaterMark = %d\r\n", uxTaskGetStackHighWaterMark(NULL));
       Serial.print("begin camera get fb\r\n");
     }
-    /* اصلاح پروژه فان‌پارک: مقدار اصلی ۱۰۰ms بود.
-       با VGA هر تلاش دیکد خودش ۵۰ تا ۱۵۰ میلی‌ثانیه طول می‌کشد، پس این
-       ۱۰۰ms اضافه، نرخ تلاش را بی‌دلیل نصف می‌کرد. ۱۰ms یعنی «بدون تاخیر
-       اضافی» و تلاش بعدی بلافاصله شروع می‌شود. */
-    vTaskDelay(10 / portTICK_PERIOD_MS);
+    /* اصلاح پروژه فان‌پارک: ۱۰۰ms اصلی حذف شد و ۲ms گذاشته شد.
+       با QVGA هر تلاش دیکد حدود ۱۰ تا ۲۵ میلی‌ثانیه است، پس نرخ تلاش
+       عملاً «هر فریم دوربین» می‌شود — برای دمو یعنی تشخیص تقریباً فوری. */
+    vTaskDelay(2 / portTICK_PERIOD_MS);
 
     fb = esp_camera_fb_get();
     if (!fb)
