@@ -87,7 +87,15 @@ struct ScanResult {
 /* ================================================================== */
 unsigned long lastScanAt  = 0;      // زمان آخرین اسکن (ضد اسکن تکراری)
 bool          cameraReady = false;  // آیا دوربین و reader با موفقیت راه افتادند
-String        sensorName  = "—";    // نام سنسور شناسایی‌شده (OV5640 و ...)
+String        sensorName  = "—";    // نام سنسور شناسایی‌شده (OV2640 و ...)
+
+/* آخرین بلیط پردازش‌شده — برای جلوگیری از پردازش دوباره همان QR */
+String        lastPayload   = "";
+unsigned long lastPayloadAt = 0;
+
+/* وضعیت رله — باز شدن غیرمسدودکننده تا دستگاه آماده اسکن بعدی بماند */
+bool          relayOpen     = false;
+unsigned long relayOpenedAt = 0;
 
 /* ------------------------------------------------------------------ */
 /*  وب‌سرور و WiFiManager                                              */
@@ -205,6 +213,9 @@ void loop() {
   // همیشه به درخواست‌های وب پاسخ بده (مستقل از وضعیت دوربین)
   webServer.handleClient();
 
+  // بستن رله وقتی زمانش تمام شد — بدون بلاک کردن حلقه
+  relayService();
+
   // اگر دوربین راه نیفتاده، فقط خطا را نشان بده
   if (!cameraReady) {
     ledRed();
@@ -245,7 +256,23 @@ void loop() {
   }
 
   LOGF("[QR] scanned — %u bytes\n", (unsigned int)payload.length());
-  lastScanAt = millis();
+
+  /* ----------------------------------------------------------------
+     اگر همین بلیط چند ثانیه پیش بررسی شده، دوباره به سرور نفرست.
+     دلیل: هنگام ارسال درخواست و باز بودن رله (حدود ۲.۵ ثانیه) تسک
+     دیکد همچنان کار می‌کند و همان QR را ده بار دیگر در صف می‌گذارد.
+     بدون این محافظ، هر کدام یک درخواست جدا به سرور می‌رفت و چون
+     اعتبار بلیط تمام شده بود، پشت سر هم «قبلاً استفاده شده» می‌گرفت.
+     ---------------------------------------------------------------- */
+  if (payload == lastPayload && (millis() - lastPayloadAt) < SAME_TICKET_IGNORE_MS) {
+    LOGLN("[QR] same ticket — ignored");
+    delay(20);
+    return;
+  }
+
+  lastPayload   = payload;
+  lastPayloadAt = millis();
+  lastScanAt    = millis();
 
   // ارسال به سرور و تصمیم‌گیری
   ScanResult res;
@@ -268,7 +295,10 @@ void loop() {
     denyAccess(res);
   }
 
-  delay(50); // فرصت تنفس برای FreeRTOS
+  /* کول‌داون کوتاه از پایان کار — تا اسکن بعدی فوراً ممکن باشد */
+  lastScanAt = millis();
+
+  delay(20); // فرصت تنفس برای FreeRTOS
 }
 
 /* ================================================================== */
@@ -279,6 +309,29 @@ void ledGreen() { rgbLed.setPixelColor(0, 0, 255, 0);   rgbLed.show(); }
 void ledRed()   { rgbLed.setPixelColor(0, 255, 0, 0);   rgbLed.show(); }
 void ledAmber() { rgbLed.setPixelColor(0, 255, 140, 0); rgbLed.show(); }
 void ledBlue()  { rgbLed.setPixelColor(0, 0, 60, 255);  rgbLed.show(); }
+
+/* ================================================================== */
+/*  کنترل غیرمسدودکننده رله                                            */
+/*                                                                     */
+/*  قبلاً grantAccess() با delay(GATE_OPEN_MS) منتظر می‌ماند و در تمام */
+/*  آن مدت دستگاه هیچ بلیطی نمی‌خواند. حالا رله فقط روشن می‌شود و       */
+/*  loop() در هر دور چک می‌کند که زمانش تمام شده یا نه؛ پس همان لحظه   */
+/*  که گیت باز است، بلیط بعدی هم اسکن می‌شود.                           */
+/* ================================================================== */
+void relayPulseStart() {
+  relayOn();
+  relayOpen     = true;
+  relayOpenedAt = millis();
+}
+
+void relayService() {
+  if (relayOpen && (millis() - relayOpenedAt) >= GATE_OPEN_MS) {
+    relayOff();
+    relayOpen = false;
+    ledBlue();                    // بازگشت LED به حالت آماده
+    LOGLN("[GATE] closed — ready for next scan");
+  }
+}
 
 /* ================================================================== */
 /*  مقداردهی پین‌های خروجی                                             */
@@ -1046,15 +1099,12 @@ void grantAccess(const ScanResult &res) {
     LOGF(" remaining=%d\n", res.remaining);
   }
 
-  relayOn();                          // باز کردن قفل برقی
+  relayPulseStart();                  // رله روشن؛ بسته‌شدن خودکار
   ledGreen();                         // سبز = ورود مجاز
   beep(1, BEEP_SUCCESS_MS);
 
-  // ۳ ثانیه باز بودن گیت + جلوگیری از اسکن مجدد همان بلیط
-  delay(GATE_OPEN_MS);
-
-  relayOff();
-  ledBlue();                          // بازگشت به حالت آماده
+  /* هیچ delay ای اینجا نیست — حلقه بلافاصله آزاد میشود و میتواند
+     بلیط بعدی را بخواند. رله در relayService() بسته میشود. */
 }
 
 /* ================================================================== */

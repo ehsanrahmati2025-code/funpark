@@ -31,10 +31,14 @@
 #define WIFI_TIMEOUT_MS    20000   // حداکثر انتظار برای اتصال WiFi
 #define HTTP_TIMEOUT_MS    15000   // حداکثر انتظار برای پاسخ GAS
 #define GATE_OPEN_MS       1500    // مدت باز بودن رله گیت (دمو: سریع)
-#define SCAN_COOLDOWN_MS   1500    // فاصله بین دو اسکن (ضد اسکن تکراری)
+#define SCAN_COOLDOWN_MS   300     // فقط دیبانسِ بین دو اسکن (خیلی کوتاه)
+
+/* اگر همان بلیط تا این مدت (میلی‌ثانیه) دوباره دیده شود، نادیده گرفته
+   می‌شود. بلیط دیگری که در همین فاصله اسکن شود، فوراً پردازش می‌شود. */
+#define SAME_TICKET_IGNORE_MS  2500
 #define BEEP_SUCCESS_MS    150     // طول بوق موفق
-#define BEEP_ERROR_MS      250     // طول بوق خطا
-#define ERROR_BEEP_COUNT   3       // تعداد بوق خطا
+#define BEEP_ERROR_MS      150     // طول بوق خطا
+#define ERROR_BEEP_COUNT   2       // تعداد بوق خطا
 #define LED_SETTLE_MS      400     // مدت نمایش رنگ قرمز بعد از خطا
 
 /* ------------------------------------------------------------------ */
