@@ -29,6 +29,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <WebServer.h>
 #include <WiFiManager.h>
+#include <time.h>
 
 #include "esp_camera.h"
 #include "ESP32QRCodeReader.h"
@@ -97,6 +98,9 @@ unsigned long lastDecodeAt  = 0;
 /* وضعیت رله — باز شدن غیرمسدودکننده تا دستگاه آماده اسکن بعدی بماند */
 bool          relayOpen     = false;
 unsigned long relayOpenedAt = 0;
+
+/* وقتی درخواست اسکن در جریان است، استریم تصویر سوکت جدید باز نکند */
+volatile bool httpBusy      = false;
 
 /* ------------------------------------------------------------------ */
 /*  وب‌سرور و WiFiManager                                              */
@@ -195,6 +199,9 @@ void setup() {
   // ۲) اتصال به WiFi (config.h یا پورتال WiFiManager)
   connectWiFi();
 
+  // تست کوتاه شبکه تا اگر سرور در دسترس نیست، سریع معلوم شود
+  checkNetwork();
+
   // ۳) وب‌سرور محلی: پنل نمایش QR و مدیریت WiFi
   setupWebServer();
 
@@ -286,7 +293,10 @@ void loop() {
   // ارسال به سرور و تصمیم‌گیری
   ScanResult res;
   uint32_t t0 = millis();
+
+  httpBusy = true;
   sendScanToServer(payload, res);
+  httpBusy = false;
 
   // ثبت در تاریخچه برای نمایش در پنل وب
   recordScan(payload, res, (uint16_t)(millis() - t0));
@@ -822,6 +832,20 @@ void handleFrameRaw() {
     return;
   }
 
+  /* اگر همین حالا یک درخواست اسکن در جریان است، سوکت جدید باز نکن؛
+     همان آخرین فریمِ کش‌شده را بفرست. این کار هم پنل را روان نگه
+     می‌دارد و هم سوکت‌های TCP را برای handshake های TLS آزاد می‌گذارد. */
+  if (httpBusy) {
+    if (frameBuf != nullptr && frameW > 0 && frameH > 0) {
+      webServer.send_P(200, "application/octet-stream",
+                       (const char *)frameBuf,
+                       (size_t)frameW * (size_t)frameH);
+    } else {
+      webServer.send(503, "text/plain", "busy");
+    }
+    return;
+  }
+
   /* با fb_count=2 همیشه یک بافر آزاد برای استریم هست، ولی برای اطمینان
      چند بار تلاش می‌کنیم (تسک QR ممکن است لحظه‌ای هر دو بافر را بگیرد). */
   camera_fb_t *fb = nullptr;
@@ -903,7 +927,64 @@ void handleFrameRaw() {
 }
 
 /* ================================================================== */
-/*  POST + دنبال کردن دستی ریدایرکت Apps Script                        */
+/*  تست شبکه — جدا کردن مشکل DNS از مشکل TLS                           */
+/*  اگر POST با -1 شکست بخورد، این تست می‌گوید کجا گیر کرده است.        */
+/* ================================================================== */
+void checkNetwork() {
+  if (WiFi.status() != WL_CONNECTED) {
+    LOGLN("[NET] wifi not connected — test skipped");
+    return;
+  }
+
+  IPAddress ip;
+  if (WiFi.hostByName("script.google.com", ip)) {
+    String m = "[NET] DNS script.google.com = ";
+    m += ip.toString();
+    LOGLN(m);
+  } else {
+    LOGLN("[NET] DNS FAILED — cannot resolve script.google.com");
+  }
+
+  WiFiClient probe;
+  if (probe.connect("script.google.com", 443, 6000)) {
+    LOGLN("[NET] TCP 443 OK");
+    probe.stop();
+  } else {
+    LOGLN("[NET] TCP 443 FAILED — firewall / internet / DNS");
+  }
+
+  /* همگام‌سازی ساعت — بعضی سرورها بدون زمان درست handshake را رد می‌کنند */
+  LOGLN("[NET] syncing time (NTP) ...");
+  configTime(3 * 3600, 0, "pool.ntp.org", "time.google.com");
+  time_t nowEpoch = time(nullptr);
+  int tries = 0;
+  while (nowEpoch < 1700000000L && tries++ < 24) {
+    delay(250);
+    nowEpoch = time(nullptr);
+  }
+  LOGF("[NET] epoch = %ld  (%s)\n", (long)nowEpoch,
+       nowEpoch > 1700000000L ? "time OK" : "time NOT synced");
+
+  /* تست TLS در بوت — با حافظه تازه، پیش از هرگونه فعالیت دوربین/وب */
+  {
+    WiFiClientSecure tls;
+    tls.setInsecure();
+    tls.setHandshakeTimeout(10);
+
+    bool tlsOk = tls.connect("script.google.com", 443, 10000);
+    char ebuf[96];
+    memset(ebuf, 0, sizeof(ebuf));
+    int ecode = tls.lastError(ebuf, sizeof(ebuf));
+
+    LOGF("[NET] TLS boot test = %s  err=%d (%s)\n",
+         tlsOk ? "OK" : "FAILED", ecode, ebuf);
+
+    if (tlsOk) tls.stop();
+  }
+}
+
+/* ================================================================== */
+/*  ارسال POST و دنبال کردن دستی ریدایرکت Apps Script                  */
 /*                                                                     */
 /*  مشکل: Apps Script همیشه 302 به script.googleusercontent.com می‌دهد.*/
 /*  حالت HTTPC_STRICT_FOLLOW_REDIRECTS همان POST را دوباره به آدرس      */
@@ -1008,6 +1089,57 @@ static String httpPostFollowRedirects(const String &url, const String &body, int
     outCode = 0;
     LOGF("[HTTP] attempt %d/%d  (free heap=%u)\n",
          attempt, MAX_ATTEMPTS, (unsigned)ESP.getFreeHeap());
+
+    /* --------------------------------------------------------------
+       تست‌های عمیق — فقط اگر HTTP_DEBUG_PROBES=1 باشد.
+       در حالت عادی خاموش‌اند تا هر اسکن فقط یک اتصال TLS بسازد.
+       -------------------------------------------------------------- */
+#if HTTP_DEBUG_PROBES
+    if (attempt == 1) {
+      WiFiClient probe;
+      bool tcpOk = probe.connect("script.google.com", 443, 4000);
+      LOGF("[HTTP] tcp probe = %s\n", tcpOk ? "OK" : "FAILED");
+      if (tcpOk) probe.stop();
+      delay(60);
+
+      /* TLS به گوگل + کد خطای دقیق mbedTLS */
+      {
+        WiFiClientSecure tls;
+        tls.setInsecure();
+        tls.setHandshakeTimeout(8);
+
+        bool tlsOk = tls.connect("script.google.com", 443, 9000);
+        char ebuf[96];
+        memset(ebuf, 0, sizeof(ebuf));
+        int ecode = tls.lastError(ebuf, sizeof(ebuf));
+
+        LOGF("[HTTP] tls(google) = %s  err=%d (%s)  maxAlloc=%u\n",
+             tlsOk ? "OK" : "FAILED", ecode, ebuf,
+             (unsigned)ESP.getMaxAllocHeap());
+
+        if (tlsOk) tls.stop();
+        delay(60);
+      }
+
+      /* TLS به یک میزبان دیگر — برای جدا کردن «مشکل دستگاه» از «مشکل شبکه/DPI» */
+      {
+        WiFiClientSecure tls2;
+        tls2.setInsecure();
+        tls2.setHandshakeTimeout(8);
+
+        bool ok2 = tls2.connect("example.com", 443, 9000);
+        char ebuf2[96];
+        memset(ebuf2, 0, sizeof(ebuf2));
+        int e2 = tls2.lastError(ebuf2, sizeof(ebuf2));
+
+        LOGF("[HTTP] tls(example.com) = %s  err=%d (%s)\n",
+             ok2 ? "OK" : "FAILED", e2, ebuf2);
+
+        if (ok2) tls2.stop();
+        delay(60);
+      }
+    }
+#endif  // HTTP_DEBUG_PROBES
 
     String r = httpPostFollowRedirectsOnce(url, body, outCode);
 
