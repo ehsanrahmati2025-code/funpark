@@ -836,7 +836,15 @@ void handleFrameRaw() {
     return;
   }
 
-  if (fb->format != PIXFORMAT_GRAYSCALE) {
+  /* اگر درایور سنسور به هر دلیلی YUV422 برگرداند، پلن Y همان روشنایی است
+     (در YUYV بایتِ 2*pix همیشه Y است). این‌طوری تصویر زنده در هر حالتی
+     نمایش داده می‌شود، نه صفحه سیاه. */
+  int bpp = 0;
+  if (fb->format == PIXFORMAT_GRAYSCALE)      bpp = 1;
+  else if (fb->format == PIXFORMAT_YUV422)    bpp = 2;
+
+  if (bpp == 0) {
+    LOGF("[FRAME] unsupported pixformat=%d\n", (int)fb->format);
     esp_camera_fb_return(fb);
     webServer.send(409, "text/plain", "unexpected pixel format");
     return;
@@ -872,11 +880,13 @@ void handleFrameRaw() {
 
   /* برداشتن هر پیکسل و سطر دوم — سبک و سریع */
   uint32_t sum = 0;
+  const size_t srcStride = (size_t)sw * (size_t)bpp;
+
   for (int y = 0; y < oh; y++) {
-    const uint8_t *src = fb->buf + (size_t)(y * factor) * (size_t)sw;
+    const uint8_t *src = fb->buf + (size_t)(y * factor) * srcStride;
     uint8_t       *dst = frameBuf + (size_t)y * (size_t)ow;
     for (int x = 0; x < ow; x++) {
-      uint8_t v = src[x * factor];
+      uint8_t v = src[(size_t)(x * factor) * (size_t)bpp];
       dst[x] = v;
       sum += v;
     }

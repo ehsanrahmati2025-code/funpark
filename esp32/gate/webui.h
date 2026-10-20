@@ -130,6 +130,11 @@ header::after{
 }
 .live-wrap canvas{width:100%;height:100%;object-fit:contain;display:none;image-rendering:pixelated}
 .live-wrap canvas.on{display:block}
+.live-note{
+  position:absolute;bottom:10px;inset-inline:10px;text-align:center;
+  font-size:11px;line-height:1.9;color:#fecdd3;background:rgba(0,0,0,.62);
+  border-radius:12px;padding:7px 10px;display:none;
+}
 .live-off{color:#94a3b8;font-size:12.5px;text-align:center;padding:20px;line-height:2}
 .live-dot{
   position:absolute;top:10px;inset-inline-start:10px;display:inline-flex;align-items:center;gap:6px;
@@ -274,6 +279,7 @@ footer{text-align:center;font-size:11px;color:var(--muted);padding:18px 0 4px}
           با روشن کردن آن، هر چه دوربین می‌بیند را همان لحظه می‌بینید.
         </div>
         <span class="live-dot" id="liveDot" style="display:none"><i></i> LIVE</span>
+        <div class="live-note" id="liveNote"></div>
       </div>
 
       <div class="actions" style="margin-top:14px">
@@ -383,6 +389,7 @@ let sel = 0;
 let liveOn = false;
 let liveImgData = null;
 let liveErrShown = false;
+let liveFails = 0;
 
 function faNum(n){ try{ return Number(n).toLocaleString('fa-IR'); }catch(e){ return n; } }
 function faDate(unix){
@@ -450,6 +457,7 @@ function renderStatus(st){
 
   // ابعاد فریم زنده را از دستگاه بگیر (پیش‌فرض 320×240)
   const fw = st.frame_w || 320, fh = st.frame_h || 240;
+  window._frameMean = st.frame_mean != null ? st.frame_mean : null;
   const cv = $('live');
   if(cv.width !== fw || cv.height !== fh){
     cv.width = fw;
@@ -612,6 +620,8 @@ function toggleLive(){
     $('liveState').className = 'badge b-ok';
     $('liveBtn').textContent = '⏸ توقف تصویر';
     liveErrShown = false;
+    liveFails = 0;
+    hideLiveNote();
     liveTick();
   }else{
     cv.classList.remove('on');
@@ -651,10 +661,33 @@ async function liveTick(){
     }
     ctx.putImageData(liveImgData, 0, 0);
     liveErrShown = false;
+    liveFails = 0;
+    hideLiveNote();
+
+    /* اگر تصویر واقعاً تاریک است، کاربر باید بداند مشکل دوربین نیست */
+    if(window._frameMean != null && window._frameMean < 8){
+      showLiveNote('تصویر تقریباً سیاه است (روشنایی ' + window._frameMean +
+                   ') — نور اتاق کم است یا لنز پوشیده شده.');
+    }
   }catch(e){
+    liveFails++;
+    showLiveNote('خطای تصویر: ' + e.message);
+
     if(!liveErrShown){
       liveErrShown = true;
       toast('تصویر زنده: ' + e.message);
+    }
+
+    /* بعد از چند خطای پشت سر هم، تلاش را متوقف کن تا صفحه قفل نشود */
+    if(liveFails >= 5){
+      liveOn = false;
+      $('live').classList.remove('on');
+      $('liveOff').style.display = 'block';
+      $('liveDot').style.display = 'none';
+      $('liveState').textContent = 'خطا';
+      $('liveState').className = 'badge b-err';
+      $('liveBtn').textContent = '▶️ تلاش مجدد';
+      return;
     }
   }
 
@@ -662,6 +695,18 @@ async function liveTick(){
      (مثلاً ۶۰ = حدود ۱۵ فریم)، ولی هر فریم از بافر دوربین گرفته می‌شود
      و روی سرعت تشخیص QR اثر می‌گذارد. */
   setTimeout(liveTick, 100);
+}
+
+function showLiveNote(msg){
+  const n = $('liveNote');
+  if(!n) return;
+  n.textContent = msg;
+  n.style.display = 'block';
+}
+
+function hideLiveNote(){
+  const n = $('liveNote');
+  if(n) n.style.display = 'none';
 }
 
 /* ---------------- WiFi ---------------- */
