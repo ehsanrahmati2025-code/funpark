@@ -89,9 +89,10 @@ unsigned long lastScanAt  = 0;      // زمان آخرین اسکن (ضد اسک
 bool          cameraReady = false;  // آیا دوربین و reader با موفقیت راه افتادند
 String        sensorName  = "—";    // نام سنسور شناسایی‌شده (OV2640 و ...)
 
-/* آخرین بلیط پردازش‌شده — برای جلوگیری از پردازش دوباره همان QR */
+/* آخرین بلیط پردازش‌شده — تا وقتی از دید دوربین خارج نشده، دوباره
+   پردازش نمی‌شود. (منطق «حضور»: نبودن بلیط یعنی برداشته شد) */
 String        lastPayload   = "";
-unsigned long lastPayloadAt = 0;
+unsigned long lastDecodeAt  = 0;
 
 /* وضعیت رله — باز شدن غیرمسدودکننده تا دستگاه آماده اسکن بعدی بماند */
 bool          relayOpen     = false;
@@ -235,9 +236,18 @@ void loop() {
 
   // دریافت یک کد QR از صف (انتظار کوتاه تا وب‌سرور معطل نماند)
   if (!reader.receiveQrCode(&qrCodeData, 30)) {
+    /* هیچ کدی در دید نیست. اگر بلیط قبلی مدتی است دیده نشده، یعنی از
+       جلوی دوربین برداشته شده؛ آن را «آزاد» می‌کنیم تا بار بعد دوباره
+       بتوان همان بلیط را اسکن کرد. */
+    if (lastPayload.length() > 0 && (millis() - lastDecodeAt) > TICKET_RELEASE_MS) {
+      lastPayload = "";
+      LOGLN("[QR] ticket removed — scanner armed again");
+    }
     delay(2);
     return;
   }
+
+  lastDecodeAt = millis();
 
   // اگر دیکد ناموفق بود، کتابخانه متن خطای quirc را در payload می‌گذارد
   if (!qrCodeData.valid || qrCodeData.payloadLen <= 0) {
@@ -258,21 +268,20 @@ void loop() {
   LOGF("[QR] scanned — %u bytes\n", (unsigned int)payload.length());
 
   /* ----------------------------------------------------------------
-     اگر همین بلیط چند ثانیه پیش بررسی شده، دوباره به سرور نفرست.
-     دلیل: هنگام ارسال درخواست و باز بودن رله (حدود ۲.۵ ثانیه) تسک
-     دیکد همچنان کار می‌کند و همان QR را ده بار دیگر در صف می‌گذارد.
-     بدون این محافظ، هر کدام یک درخواست جدا به سرور می‌رفت و چون
-     اعتبار بلیط تمام شده بود، پشت سر هم «قبلاً استفاده شده» می‌گرفت.
+     منطق «حضور بلیط»:
+       تا وقتی همین بلیط جلوی دوربین است، همان QR ده‌ها بار دیکد می‌شود.
+       تا وقتی از دید خارج نشود (یعنی TICKET_RELEASE_MS هیچ کدی دیده
+       نشود) فقط بار اول پردازش می‌شود. بعد از برداشتن بلیط، خودکار
+       «مسلح» می‌شود و می‌توان دوباره اسکن کرد.
      ---------------------------------------------------------------- */
-  if (payload == lastPayload && (millis() - lastPayloadAt) < SAME_TICKET_IGNORE_MS) {
-    LOGLN("[QR] same ticket — ignored");
+  if (payload == lastPayload) {
+    LOGLN("[QR] same ticket still in view — ignored");
     delay(20);
     return;
   }
 
-  lastPayload   = payload;
-  lastPayloadAt = millis();
-  lastScanAt    = millis();
+  lastPayload = payload;
+  lastScanAt  = millis();
 
   // ارسال به سرور و تصمیم‌گیری
   ScanResult res;
