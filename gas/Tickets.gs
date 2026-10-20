@@ -23,62 +23,75 @@ function creditsForEvent_(event) {
 /* ------------------------------------------------------------------ */
 
 /**
- * ساخت بدنه کانونیکال QR — قالب فشرده:  v|tid|nonce|exp
+ * ساخت بدنه کانونیکال QR — قالب فوق‌فشرده و «آلفانومریک»
  *
- * چرا JSON نه؟
- *   هر کاراکتر اضافه، نسخه QR را بالا می‌برد و ماژول‌ها را ریزتر می‌کند.
- *   نسخه قبلی (JSON کامل) حدود ۲۹۸ کاراکتر بود ⟹ QR نسخه ۱۱ (۶۹×۶۹ ماژول)
- *   این قالب حدود ۱۱۰ کاراکتر است ⟹ QR نسخه ۵ (۳۷×۳۷ ماژول)
- *   یعنی هر ماژول روی صفحه تقریباً دو برابر بزرگ‌تر و برای دوربین خواناتر.
+ *   بدنه :  {v}-{tid12}          مثال: 1-618286315425
+ *   QR   :  {v}-{tid12}-{sig20}  مثال: 1-618286315425-A3F2K9QM2XB7PL3D8C1E
  *
- * فیلدهای eid و sn و iat عمداً حذف شده‌اند: سرور همه‌شان را از روی ردیف
- * بلیط (با tid) پیدا می‌کند، پس وجودشان در QR فقط حجم اضافه بود.
+ * چرا این قالب؟
+ *   ۱) طول کل به ۳۵ کاراکتر می‌رسد (نسخه قبل ۱۱۱ و نسخه اولش ۲۹۸ بود).
+ *   ۲) همه کاراکترها از مجموعه آلفانومریک QR هستند (0-9 A-Z -)، پس
+ *      کتابخانه qrcode حالت ALPHANUMERIC را انتخاب می‌کند که ظرفیت
+ *      بیشتری از حالت بایتی دارد.
+ *
+ *   نتیجه: از نسخه ۶ (۴۱×۴۱ ماژول) به نسخه ۲ (۲۵×۲۵ ماژول) می‌رسیم؛
+ *   یعنی هر ماژول روی صفحه ۲.۷ برابر بزرگ‌تر و برای دوربین خواناتر.
+ *   QR کوچک‌ترین حالت ممکن ۲۱×۲۱ است، پس بیشتر از این قابل کاهش نیست.
+ *
+ * tid12 = ۱۲ کاراکتر اول شناسه بلیط بدون خط تیره (۴۸ بیت). سرور بلیط را
+ * با همین پیشوند پیدا می‌کند. فیلدهای eid و sn و iat و exp حذف شده‌اند
+ * چون سرور همه‌شان را از روی ردیف بلیط می‌خواند.
  */
+/* ------------------------------------------------------------------ */
+/*  تنظیم چگالی QR                                                    */
+/*                                                                    */
+/*  QR_TINY = false :  نسخه ۲ (۲۵×۲۵ ماژول)، امضا ۸۰ بیت، شناسه ۴۸ بیت */
+/*  QR_TINY = true  :  نسخه ۱ (۲۱×۲۱ ماژول)، امضا ۴۰ بیت، شناسه ۳۲ بیت */
+/*                                                                    */
+/*  نسخه ۱ کوچک‌ترین QR ممکن است؛ ماژول‌هایش ۳.۸ برابر حالت اولیه      */
+/*  می‌شوند ولی امنیت امضا پایین می‌آید. برای دمو می‌توان true کرد.      */
+/*  هر مقداری که بگذارید، هم ساخت و هم اعتبارسنجی از همین استفاده      */
+/*  می‌کنند، پس هر دو سمت هم‌خوان می‌مانند.                             */
+/* ------------------------------------------------------------------ */
+var QR_TINY = false;
+
+/** طول شناسه کوتاه داخل QR */
+var QR_ID_LEN = QR_TINY ? 8 : 12;
+
+/** طول امضا به کاراکتر هگز: ۱۲×۴=۴۸ بیت یا ۲۰×۴=۸۰ بیت */
+var QR_SIG_LEN = QR_TINY ? 10 : 20;
+
 function qrCanonical_(p) {
-  return String(1) + '|' + String(p.tid) + '|' + String(p.nonce) + '|' + String(toInt_(p.exp, 0));
+  var flat = String(p.tid).replace(/-/g, '').toUpperCase();
+  return String(1) + '-' + flat.substring(0, QR_ID_LEN);
 }
 
-/** طول امضای کوتاه‌شده: ۲۲ کاراکتر base64url = ۱۶ بایت = ۱۲۸ بیت */
-var QR_SIG_LEN = 22;
-
-/**
- * ساخت رشته QR:
- *   base64url(v|tid|nonce|exp) + "." + base64url(hmac_sha256(بدنه))[0..21]
- */
+/** ساخت رشته QR:  {v}-{tid12}-{sig20} */
 function buildQrString_(payload) {
   var body = qrCanonical_(payload);
   var secret = getProp_('QR_SECRET');
-  var sig = hmacSha256B64Url_(body, secret).substring(0, QR_SIG_LEN);
-  return strToB64Url_(body) + '.' + sig;
+  var sigBytes = Utilities.computeHmacSha256Signature(body, secret, Utilities.Charset.UTF_8);
+  var sig = bytesToHex_(sigBytes).toUpperCase().substring(0, QR_SIG_LEN);
+  return body + '-' + sig;
 }
 
 /** تجزیه و اعتبارسنجی رشته QR — خروجی: { valid, reason, payload } */
 function parseQrString_(qr) {
   try {
-    var parts = String(qr || '').trim().split('.');
-    if (parts.length !== 2) return { valid: false, reason: 'malformed_qr' };
+    var s = String(qr || '').trim().toUpperCase();
+    var parts = s.split('-');
+    if (parts.length !== 3) return { valid: false, reason: 'malformed_qr' };
 
-    var body = b64UrlToStr_(parts[0]);
+    var body = parts[0] + '-' + parts[1];
     var secret = getProp_('QR_SECRET');
-    var expected = hmacSha256B64Url_(body, secret).substring(0, QR_SIG_LEN);
-    if (!safeEqual_(expected, parts[1])) return { valid: false, reason: 'bad_signature' };
+    var sigBytes = Utilities.computeHmacSha256Signature(body, secret, Utilities.Charset.UTF_8);
+    var expected = bytesToHex_(sigBytes).toUpperCase().substring(0, QR_SIG_LEN);
 
-    var f = body.split('|');
-    if (f.length !== 4) return { valid: false, reason: 'incomplete_payload' };
+    if (!safeEqual_(expected, parts[2])) return { valid: false, reason: 'bad_signature' };
+    if (toInt_(parts[0], 0) !== 1) return { valid: false, reason: 'unsupported_version' };
+    if (!parts[1]) return { valid: false, reason: 'incomplete_payload' };
 
-    var payload = {
-      v: toInt_(f[0], 0),
-      tid: String(f[1]),
-      nonce: String(f[2]),
-      exp: toInt_(f[3], 0)
-    };
-
-    if (payload.v !== 1) return { valid: false, reason: 'unsupported_version' };
-    if (!payload.tid || !payload.nonce) return { valid: false, reason: 'incomplete_payload' };
-
-    if (payload.exp < unixNow_()) return { valid: false, reason: 'expired', payload: payload };
-
-    return { valid: true, reason: 'ok', payload: payload };
+    return { valid: true, reason: 'ok', payload: { v: 1, tid: parts[1].toLowerCase() } };
   } catch (err) {
     return { valid: false, reason: 'malformed_qr' };
   }

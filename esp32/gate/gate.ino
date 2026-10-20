@@ -528,54 +528,68 @@ void recordScan(const String &payload, const ScanResult &res, uint16_t latency) 
   r.payload    = payload;
   r.payloadLen = payload.length();
 
-  /* ---------- تفکیک بدنه و امضا ---------- */
-  int dot = payload.indexOf('.');
-  r.hasDot = (dot > 0);
-
-  String bodyB64 = r.hasDot ? payload.substring(0, dot) : payload;
-  String sigB64  = r.hasDot ? payload.substring(dot + 1) : "";
-  r.sigLen = sigB64.length();
-  r.bodyJson = b64urlDecode(bodyB64);
-
-  /* ---------- استخراج فیلدهای payload ----------
-     دو قالب پشتیبانی می‌شود:
-       • قالب فشرده جدید:  v|tid|nonce|exp
-       • قالب قدیمی:       {"v":1,"tid":...}  (بلیط‌های صادرشده قبل)
+  /* ---------- تفکیک بدنه و امضا ----------
+     سه قالب ممکن است به دستگاه برسد:
+     ۱) v-tid12-sig20          ← قالب فعلی (فوق فشرده، آلفانومریک)
+     ۲) base64url(v|tid|n|exp).sig   ← قالب میانی
+     ۳) base64url({"v":1,...}).sig   ← قالب اولیه
      -------------------------------------------------- */
   r.v = 0; r.iat = 0; r.exp = 0;
 
+  int dot = payload.indexOf('.');
+
+  if (dot < 0 && payload.indexOf('-') > 0) {
+    /* ---------- قالب ۱: v-tid12-sig ---------- */
+    r.hasDot   = false;
+    r.bodyJson = payload;                       // خودِ رشته را نشان می‌دهیم
+
+    int d1 = payload.indexOf('-');
+    int d2 = payload.indexOf('-', d1 + 1);
+    if (d1 > 0 && d2 > 0) {
+      r.v      = payload.substring(0, d1).toInt();
+      r.tid    = payload.substring(d1 + 1, d2);
+      r.sigLen = payload.length() - d2 - 1;
+    }
+  } else if (dot > 0) {
+    /* ---------- قالب‌های ۲ و ۳: base64url + نقطه ---------- */
+    r.hasDot = true;
+    r.sigLen = payload.length() - dot - 1;
+    r.bodyJson = b64urlDecode(payload.substring(0, dot));
+
 #if ARDUINOJSON_VERSION_MAJOR >= 7
-  JsonDocument d;
+    JsonDocument d;
 #else
-  DynamicJsonDocument d(1024);
+    DynamicJsonDocument d(1024);
 #endif
 
-  if (r.bodyJson.startsWith("{")) {
-    /* --- قالب قدیمی JSON --- */
-    if (!deserializeJson(d, r.bodyJson)) {
-      r.v     = d["v"]     | 0;
-      r.tid   = String((const char *)(d["tid"]   | ""));
-      r.eid   = String((const char *)(d["eid"]   | ""));
-      r.sn    = String((const char *)(d["sn"]    | ""));
-      r.nonce = String((const char *)(d["nonce"] | ""));
-      r.iat   = (uint32_t)(d["iat"] | 0);
-      r.exp   = (uint32_t)(d["exp"] | 0);
+    if (r.bodyJson.startsWith("{")) {
+      /* قالب ۳: JSON کامل */
+      if (!deserializeJson(d, r.bodyJson)) {
+        r.v     = d["v"]     | 0;
+        r.tid   = String((const char *)(d["tid"]   | ""));
+        r.eid   = String((const char *)(d["eid"]   | ""));
+        r.sn    = String((const char *)(d["sn"]    | ""));
+        r.nonce = String((const char *)(d["nonce"] | ""));
+        r.iat   = (uint32_t)(d["iat"] | 0);
+        r.exp   = (uint32_t)(d["exp"] | 0);
+      }
+    } else {
+      /* قالب ۲: v|tid|nonce|exp */
+      int p1 = r.bodyJson.indexOf('|');
+      int p2 = (p1 >= 0) ? r.bodyJson.indexOf('|', p1 + 1) : -1;
+      int p3 = (p2 >= 0) ? r.bodyJson.indexOf('|', p2 + 1) : -1;
+
+      if (p1 > 0 && p2 > 0 && p3 > 0) {
+        r.v     = r.bodyJson.substring(0, p1).toInt();
+        r.tid   = r.bodyJson.substring(p1 + 1, p2);
+        r.nonce = r.bodyJson.substring(p2 + 1, p3);
+        r.exp   = (uint32_t)r.bodyJson.substring(p3 + 1).toInt();
+      }
     }
   } else {
-    /* --- قالب فشرده جدید: v|tid|nonce|exp --- */
-    int p1 = r.bodyJson.indexOf('|');
-    int p2 = (p1 >= 0) ? r.bodyJson.indexOf('|', p1 + 1) : -1;
-    int p3 = (p2 >= 0) ? r.bodyJson.indexOf('|', p2 + 1) : -1;
-
-    if (p1 > 0 && p2 > 0 && p3 > 0) {
-      r.v     = r.bodyJson.substring(0, p1).toInt();
-      r.tid   = r.bodyJson.substring(p1 + 1, p2);
-      r.nonce = r.bodyJson.substring(p2 + 1, p3);
-      r.exp   = (uint32_t)r.bodyJson.substring(p3 + 1).toInt();
-      r.iat   = 0;      // در قالب فشرده ذخیره نمی‌شود
-      r.sn    = "";     // شماره سریال از پاسخ سرور می‌آید
-      r.eid   = "";     // شناسه رویداد از پاسخ سرور می‌آید
-    }
+    /* ---------- ناشناخته ---------- */
+    r.hasDot   = false;
+    r.bodyJson = payload;
   }
 
   /* ---------- نتیجه سرور ---------- */

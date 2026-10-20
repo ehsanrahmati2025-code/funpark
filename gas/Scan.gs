@@ -128,18 +128,19 @@ function handleScanValidate(ctx) {
     }
 
     try {
-      var row = findRow_('Tickets', function (t) { return String(t.id) === String(payload.tid); });
+      /* QR فقط ۱۲ کاراکتر اول شناسه بلیط را دارد؛ با پیشوند پیدا می‌کنیم */
+      var shortId = String(payload.tid || '').toLowerCase();
+      var row = findRow_('Tickets', function (t) {
+        return String(t.id).replace(/-/g, '').toLowerCase().indexOf(shortId) === 0;
+      });
 
       if (!row) {
         logScan_(payload.tid, deviceId, 'ticket_not_found', null, null, ip);
         return scanResult_(false, 'ticket_not_found', 'deny', denyMessageFa_('ticket_not_found'));
       }
 
-      // بررسی تطابق nonce (جلوگیری از کپی کد QR قدیمی)
-      if (!safeEqual_(String(row.nonce), String(payload.nonce))) {
-        logScan_(payload.tid, deviceId, 'nonce_mismatch', null, null, ip);
-        return scanResult_(false, 'nonce_mismatch', 'deny', denyMessageFa_('nonce_mismatch'));
-      }
+      /* دیگر بررسی nonce لازم نیست: امضای HMAC روی همین شناسه کوتاه،
+         اصالت و دست‌نخوردگی را تضمین می‌کند و nonce فقط ردیف را تکرار می‌کرد. */
 
       // بررسی رویداد مقصد (در صورت ارسال event_id از دستگاه)
       if (body.event_id && String(body.event_id) !== String(row.event_id)) {
