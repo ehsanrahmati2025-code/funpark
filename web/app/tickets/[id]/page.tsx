@@ -131,14 +131,15 @@ export default function TicketDetailPage() {
 
         <div className="rounded-3xl border border-dashed border-slate-200 bg-white py-3 text-center">
           {qrValue ? (
-            /* QR بزرگ‌تر + کنتراست کامل: level="L" مربع‌های درشت‌تری می‌سازد
-               و سیاه/سفید خالص برای دوربین ESP32-S3-CAM خیلی خواناتر است.
-               اندازه ۳۶۰ پیکسل تا هر ماژول QR روی صفحه گوشی درشت‌تر دیده شود. */
-            <div className="mx-auto w-full max-w-[360px] bg-white leading-none">
+            /* حاشیه سفید (quiet zone) اجباری است: بدون آن quirc در فاصله
+               و زاویه به‌سختی کد را پیدا می‌کند. marginSize={4} چهار ماژول
+               حاشیه در خود QR می‌گذارد و p-4 هم همان را روی صفحه تضمین می‌کند. */
+            <div className="mx-auto w-full max-w-[360px] rounded-2xl bg-white p-4 leading-none">
               <QRCodeSVG
                 value={qrValue}
                 size={360}
                 level="L"
+                marginSize={4}
                 bgColor="#ffffff"
                 fgColor="#000000"
                 className="block h-auto w-full"
