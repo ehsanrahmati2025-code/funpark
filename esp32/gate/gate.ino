@@ -910,13 +910,14 @@ void handleFrameRaw() {
 /*  ریدایرکت می‌فرستد و گوگل پاسخ HTML «400 Bad Request» می‌دهد.        */
 /*  راه درست: Location را خودمان بخوانیم و مرحله دوم را با GET بزنیم.  */
 /* ================================================================== */
-static String httpPostFollowRedirects(const String &url, const String &body, int &outCode) {
+static String httpPostFollowRedirectsOnce(const String &url, const String &body, int &outCode) {
   outCode = 0;
 
   /* ---------------- مرحله ۱: POST بدون ریدایرکت ---------------- */
   {
     WiFiClientSecure client;
     client.setInsecure();               // دمو؛ در تولید گواهی ریشه بگذارید
+    client.setHandshakeTimeout(8);      // ثانیه — پیش‌فرض ۱۲۰ برای این کار زیاد است
 
     HTTPClient http;
     http.setTimeout(HTTP_TIMEOUT_MS);
@@ -969,6 +970,7 @@ static String httpPostFollowRedirects(const String &url, const String &body, int
     /* ---------------- مرحله ۲: GET روی Location ---------------- */
     WiFiClientSecure client2;
     client2.setInsecure();
+    client2.setHandshakeTimeout(8);
 
     HTTPClient http2;
     http2.setTimeout(HTTP_TIMEOUT_MS);
@@ -990,6 +992,43 @@ static String httpPostFollowRedirects(const String &url, const String &body, int
     http2.end();
     return r;
   }
+}
+
+/* ================================================================== */
+/*  تلاش مجدد خودکار                                                   */
+/*                                                                     */
+/*  اولین اتصال TLS بعد از یک دوره بی‌کاری، یا وقتی چند سوکت همزمان باز */
+/*  است (پنل وب + استریم تصویر)، ممکن است با -1 شکست بخورد. یک یا دو   */
+/*  تلاش دوباره معمولاً مشکل را حل می‌کند.                              */
+/* ================================================================== */
+static String httpPostFollowRedirects(const String &url, const String &body, int &outCode) {
+  const int MAX_ATTEMPTS = 3;
+
+  for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    outCode = 0;
+    LOGF("[HTTP] attempt %d/%d  (free heap=%u)\n",
+         attempt, MAX_ATTEMPTS, (unsigned)ESP.getFreeHeap());
+
+    String r = httpPostFollowRedirectsOnce(url, body, outCode);
+
+    if (outCode > 0) return r;          // پاسخ گرفته شد (۲۰۰ یا هر کد دیگری)
+
+    LOGF("[HTTP] attempt %d failed (code=%d)\n", attempt, outCode);
+
+    if (WiFi.status() != WL_CONNECTED) {
+      LOGLN("[HTTP] wifi lost — reconnecting");
+      WiFi.reconnect();
+      unsigned long t0 = millis();
+      while (WiFi.status() != WL_CONNECTED && millis() - t0 < 4000) {
+        webServer.handleClient();
+        delay(100);
+      }
+    }
+
+    delay(300);
+  }
+
+  return "";
 }
 
 /* ================================================================== */
